@@ -1,0 +1,10 @@
+[CmdletBinding(SupportsShouldProcess=$true)]
+param([Parameter(Mandatory)][string]$Identity,[switch]$Unlock,[switch]$Enable,[switch]$ResetPassword,[securestring]$NewPassword,[switch]$RequirePasswordChange,[switch]$ClearExpired,[string]$OutputPath="$env:USERPROFILE\Desktop\ADUserRepair")
+$ErrorActionPreference='Stop';Import-Module ActiveDirectory -ErrorAction Stop;New-Item -ItemType Directory -Path $OutputPath -Force|Out-Null;$Log=Join-Path $OutputPath ("repair-{0:yyyyMMdd-HHmmss}.log"-f(Get-Date));function L($m){"$(Get-Date -Format s) $m"|Tee-Object -FilePath $Log -Append};if(-not($Unlock-or$Enable-or$ResetPassword-or$RequirePasswordChange-or$ClearExpired)){throw'Choose at least one repair action.'}
+$user=Get-ADUser $Identity -Properties LockedOut,Enabled,PasswordExpired,PasswordLastSet,LastLogonDate,DistinguishedName;$user|Select SamAccountName,Enabled,LockedOut,PasswordExpired,PasswordLastSet,LastLogonDate,DistinguishedName|Export-Clixml (Join-Path $OutputPath 'before.xml')
+if($Unlock-and$PSCmdlet.ShouldProcess($user.SamAccountName,'Unlock account')){Unlock-ADAccount $user;L'Account unlocked.'}
+if($Enable-and$PSCmdlet.ShouldProcess($user.SamAccountName,'Enable account')){Enable-ADAccount $user;L'Account enabled.'}
+if($ResetPassword){if(-not$NewPassword){throw'-NewPassword is required.'};if($PSCmdlet.ShouldProcess($user.SamAccountName,'Reset password')){Set-ADAccountPassword $user -Reset -NewPassword $NewPassword;L'Password reset completed.'}}
+if($RequirePasswordChange-and$PSCmdlet.ShouldProcess($user.SamAccountName,'Require password change at next logon')){Set-ADUser $user -ChangePasswordAtLogon $true;L'Password change requirement set.'}
+if($ClearExpired-and$PSCmdlet.ShouldProcess($user.SamAccountName,'Clear password-expired flag by setting change-at-logon')){Set-ADUser $user -ChangePasswordAtLogon $true;L'Expired password remediation applied.'}
+Get-ADUser $Identity -Properties LockedOut,Enabled,PasswordExpired,PasswordLastSet,LastLogonDate|Export-Clixml (Join-Path $OutputPath 'after.xml');L'Repair workflow finished.'
